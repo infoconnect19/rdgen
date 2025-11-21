@@ -675,35 +675,21 @@ jobs:
             # Clean up
             rm certificate.p12 
 
-      # Remove quarantine + Sign .app (AD-HOC)
-      - name: Remove quarantine flag on app before packaging
-        shell: bash
-        run: |
-          echo "Removing quarantine attributes from .app bundle"
-          xattr -cr flutter/build/macos/Build/Products/Release/${{ inputs.appname }}.app || true
-
-      - name: Ad-hoc sign the macOS app
-        shell: bash
-        run: |
-          echo "Performing ad-hoc signature on macOS app"
-          codesign --force --deep --sign - flutter/build/macos/Build/Products/Release/${{ inputs.appname }}.app
-
-      # Create DMG
       - name: Create DMG
         run: |
           cd /Users/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/flutter/build/macos/Build/Products/Release
+          # Print directory contents for debugging
           echo "Directory contents:"
           ls -la
-
+          # Find the actual .app bundle
           if [ -d "RustDesk.app" ]; then
+            # First rename the app if it's still called RustDesk.app
             mv "RustDesk.app" "${{ inputs.appname }}.app"
           fi
-
           if [ ! -d "${{ inputs.appname }}.app" ]; then
             echo "Could not find .app bundle!"
             exit 1
           fi
-
           echo "Creating DMG for ${{ inputs.appname }}.app"
           create-dmg \
             --volname "${{ inputs.appname }}" \
@@ -715,39 +701,26 @@ jobs:
             --app-drop-link 600 185 \
             "${{ inputs.appname }}-${{ matrix.job.arch }}.dmg" \
             "${{ inputs.appname }}.app"
-
           mv "${{ inputs.appname }}-${{ matrix.job.arch }}.dmg" $GITHUB_WORKSPACE/
-
-      # Rename DMG
+  
       - name: Rename rustdesk
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           cd $GITHUB_WORKSPACE
           echo "Directory contents:"
           ls -la
+            
+          # Find the DMG file dynamically
           DMG_FILE=$(find . -name "${{ inputs.appname }}-${{ matrix.job.arch }}.dmg")
-
+            
           if [ -n "$DMG_FILE" ]; then
+            echo "Found DMG file: $DMG_FILE"
             mv "$DMG_FILE" "${{ inputs.filename }}-${{ matrix.job.arch }}.dmg"
             echo "Renamed to ${{ inputs.filename }}-${{ matrix.job.arch }}.dmg"
           else
             echo "No DMG file found matching the pattern"
             exit 1
           fi
-
-      # Sign DMG (AD-HOC)
-      - name: Ad-hoc sign the renamed dmg
-        shell: bash
-        run: |
-          echo "Performing ad-hoc signature on the renamed DMG"
-          codesign --force --sign - "$GITHUB_WORKSPACE/${{ inputs.filename }}-${{ matrix.job.arch }}.dmg"
-
-      # Remove quarantine after signing
-      - name: Remove quarantine flag on dmg (post-sign)
-        shell: bash
-        run: |
-          echo "Removing quarantine attributes after signing"
-          xattr -cr "$GITHUB_WORKSPACE/${{ inputs.filename }}-${{ matrix.job.arch }}.dmg" || true
 
       - name: send file to rdgen server
         if: ${{ fromJson(inputs.extras).rdgen == 'true' }}
